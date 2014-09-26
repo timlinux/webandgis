@@ -14,8 +14,8 @@ from subprocess import call
 from django.contrib.auth.decorators import login_required
 
 import qgis
-from PyQt4.QtCore import QCoreApplication, QSettings, QSize
-from PyQt4.QtGui import QImage, QPainter, qRgb
+from PyQt4.QtCore import QCoreApplication, QSettings, QSize, Qt
+from PyQt4.QtGui import QImage, QPainter, qRgb,QPen, QColor
 from qgis.core import (
     QgsApplication,
     QgsProviderRegistry,
@@ -23,7 +23,8 @@ from qgis.core import (
     QgsMapLayer,
     QgsRectangle,
     QgsMapRenderer,
-    QgsMapLayerRegistry
+    QgsMapLayerRegistry,
+    QgsRectangle
     )
 
 def index(request):
@@ -82,15 +83,45 @@ def preview(request, layer_slug):
     map_layer = QgsVectorLayer(layer_path, layer.name, 'ogr')
     QgsMapLayerRegistry.instance().addMapLayer(map_layer)
     layer_uri = '/tmp/canvas.png'
-    renderer = QgsMapRenderer()
-    renderer.setLayerSet([map_layer.id()])
-    renderer.setExtent(map_layer.extent())
-    image = QImage(400, 400, QImage.Format_RGB32)
-    painter = QPainter(image)
-    image.fill(qRgb(0, 255, 255))
-    renderer.render(painter)
-    image.save(layer_uri)
-    painter.end()
+
+    # create image
+    img = QImage(QSize(800,600), QImage.Format_ARGB32_Premultiplied)
+
+    # set image's background color
+    color = QColor(255,255,255)
+    img.fill(color.rgb())
+
+    # create painter
+    p = QPainter()
+    p.begin(img)
+    p.setRenderHint(QPainter.Antialiasing)
+
+    render = QgsMapRenderer()
+
+    # set layer set
+    lst = [ map_layer.id() ]  # add ID of every layer
+    render.setLayerSet(lst)
+
+    # set extent
+    rect = QgsRectangle(render.fullExtent())
+    rect.scale(1.1)
+    render.setExtent(rect)
+
+    # set output size
+    render.setOutputSize(img.size(), img.logicalDpiX())
+
+    # do the rendering
+    render.render(p)
+
+    p.end()
+
+    # save image
+    img.save(layer_uri,"png")
+
+
+
+
+
 
     with open(layer_uri, 'rb') as f:
         response = HttpResponse(f.read(), content_type='png')
