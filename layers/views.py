@@ -15,15 +15,16 @@ from django.contrib.auth.decorators import login_required
 
 import qgis
 from PyQt4.QtCore import QCoreApplication, QSettings, QSize
-from PyQt4.QtGui import QApplication
+from PyQt4.QtGui import QImage, QPainter, qRgb
 from qgis.core import (
     QgsApplication,
     QgsProviderRegistry,
     QgsVectorLayer,
     QgsMapLayer,
-    QgsRectangle
+    QgsRectangle,
+    QgsMapRenderer,
+    QgsMapLayerRegistry
     )
-from qgis.gui import QgsMapCanvasLayer, QgsMapCanvas
 
 def index(request):
     """Home page for layers.
@@ -36,7 +37,6 @@ def index(request):
 
     #noinspection PyPep8Naming
     gui_flag = False
-    app = QApplication(argv, True)
     qgis_app = QgsApplication(sys.argv, gui_flag)
 
     # Make sure QGIS_PREFIX_PATH is set in your env if needed!
@@ -70,8 +70,8 @@ def preview(request, layer_slug):
     QCoreApplication.setApplicationName('QGIS2InaSAFETesting')
 
     #noinspection PyPep8Naming
-    gui_flag = False
-    app = QApplication(None, True)
+    gui_flag = True
+    # app = QApplication([], gui_flag)
     qgis_app = QgsApplication(sys.argv, gui_flag)
 
     # Make sure QGIS_PREFIX_PATH is set in your env if needed!
@@ -80,17 +80,20 @@ def preview(request, layer_slug):
     layer_path = os.path.join(
         settings.MEDIA_ROOT, 'layers', layer.slug, 'raw')
     map_layer = QgsVectorLayer(layer_path, layer.name, 'ogr')
-    canvas = QgsMapCanvas(None)
-    canvas.resize(QSize(400, 400))
-    canvas_layer = QgsMapCanvasLayer(map_layer)
-    canvas.setLayerSet([canvas_layer])
-    canvas.zoomToFullExtent()
-    canvas.refresh()
-
+    QgsMapLayerRegistry.instance().addMapLayer(map_layer)
     layer_uri = '/tmp/canvas.png'
-    canvas.saveAsImage(layer_uri)
+    renderer = QgsMapRenderer()
+    renderer.setLayerSet([map_layer.id()])
+    renderer.setExtent(map_layer.extent())
+    image = QImage(400, 400, QImage.Format_RGB32)
+    painter = QPainter(image)
+    image.fill(qRgb(0, 255, 255))
+    renderer.render(painter)
+    image.save(layer_uri)
+    painter.end()
+
     with open(layer_uri, 'rb') as f:
-        response = HttpResponse(f.read(), mimetype='png')
+        response = HttpResponse(f.read(), content_type='png')
 
     return response
 
