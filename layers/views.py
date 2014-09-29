@@ -1,4 +1,4 @@
-import sys
+import tempfile
 import glob
 import os
 
@@ -28,6 +28,15 @@ from qgis.core import (
 QGIS_APP = None
 
 
+def qgis_layers():
+    r = QgsMapLayerRegistry.instance()
+    registry_layers = r.mapLayers()
+    registry_list = []
+    for layer in registry_layers:
+        registry_list.append(layer)
+    return registry_list
+
+
 def index(request):
     """Home page for layers.
 
@@ -44,8 +53,12 @@ def index(request):
         map_layer = QgsVectorLayer(layer_path, layer.name, 'ogr')
         layer_size = map_layer.featureCount()
         layer.layer_size = layer_size
+        del layer
 
-    context = {'layers': layers, 'providers': providers, 'sizes': sizes}
+    context = {
+        'layers': layers,
+        'providers': providers,
+        'sizes': sizes}
     return render(request, 'layers/index.html', context)
 
 
@@ -61,8 +74,8 @@ def preview(request, layer_slug):
         settings.MEDIA_ROOT, 'layers', layer.slug, 'raw')
     map_layer = QgsVectorLayer(layer_path, layer.name, 'ogr')
     QgsMapLayerRegistry.instance().addMapLayer(map_layer)
-    layer_uri = '/tmp/canvas.png'
-
+    layer_uri = tempfile.NamedTemporaryFile(
+        suffix='.png', prefix='inasafe-web-', dir='/tmp/').name
     # create image
     image = QImage(QSize(100, 100), QImage.Format_ARGB32_Premultiplied)
 
@@ -93,10 +106,17 @@ def preview(request, layer_slug):
     renderer.render(p)
 
     p.end()
+
+    # clean up
+    registry_list = qgis_layers()
+    QgsMapLayerRegistry.instance().removeMapLayer(map_layer.id())
+    print registry_list
+
     # save image
     image.save(layer_uri, 'png')
     with open(layer_uri, 'rb') as f:
         response = HttpResponse(f.read(), content_type='png')
+    os.remove(layer_uri)
 
     return response
 
