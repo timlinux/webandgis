@@ -64,7 +64,7 @@ def preview(request, layer_slug):
     layer_uri = '/tmp/canvas.png'
 
     # create image
-    image = QImage(QSize(800, 600), QImage.Format_ARGB32_Premultiplied)
+    image = QImage(QSize(100, 100), QImage.Format_ARGB32_Premultiplied)
 
     # set image's background color
     color = QColor(255, 255, 255)
