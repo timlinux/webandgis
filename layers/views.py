@@ -143,10 +143,7 @@ def get_layer_data(layer_name):
     os.chdir(layer_path)
     filename = glob.glob('*.shp')[0]
     layer_file = os.path.join(layer_path, filename)
-    layer_object = QgsVectorLayer(layer_file, layer.name, 'ogr')
-    map_layer = QgisWrapper(layer_object)
-
-    return map_layer
+    return read_layer(layer_file)
 
 @login_required(redirect_field_name='next')
 def calculate(request):
@@ -155,29 +152,28 @@ def calculate(request):
 
     output = os.path.join(settings.MEDIA_ROOT, 'layers', 'impact.json')
 
-    roads = get_layer_data('Roads')
+    buildings = get_layer_data('Buildings')
     flood = get_layer_data('Flood')
 
-    impact_function = FloodVectorRoadsExperimentalFunction
+    # assign the required keywords for inasafe calculations
+    buildings.keywords['category'] = 'exposure'
+    buildings.keywords['subcategory'] = 'structure'
+    flood.keywords['category'] = 'hazard'
+    flood.keywords['subcategory'] = 'flood'
 
-    xmin, ymin, xmax, ymax = 121, 14.54, 121.05, 14.56
-
-    impact_file = calculate_safe_impact(
-                layers=[roads, flood],
-                function=impact_function,
-                extent=[xmin, ymin, xmax, ymax],
-                check_integrity=False)
-
-    os.remove(impact_geojson)
+    impact_function = FloodBuildingImpactFunction
+    # run analisys
+    impact_file = calculate_impact(
+        layers=[buildings, flood],
+        impact_fcn=impact_function
+    )
 
     call(['ogr2ogr', '-f', 'GeoJSON',
           output, impact_file.filename])
 
     impact_geojson = os.path.join(settings.MEDIA_URL, 'layers', 'impact.json')
-    os.remove(impact_geojson)
 
     context = impact_file.keywords
-    context = {}
     context['geojson'] = impact_geojson
     context['user'] = request.user
 
