@@ -13,11 +13,9 @@ from safe.impact_functions.inundation.flood_OSM_building_impact import \
 from subprocess import call
 from django.contrib.auth.decorators import login_required
 
-import qgis
-from PyQt4.QtCore import QCoreApplication, QSettings, QSize, Qt
-from PyQt4.QtGui import QImage, QPainter, qRgb,QPen, QColor
+from PyQt4.QtCore import QCoreApplication, QSize
+from PyQt4.QtGui import QImage, QPainter, QColor
 from qgis.core import (
-    QgsApplication,
     QgsProviderRegistry,
     QgsVectorLayer,
     QgsMapLayer,
@@ -27,22 +25,14 @@ from qgis.core import (
     QgsRectangle
     )
 
+QGIS_APP = None
+
+
 def index(request):
     """Home page for layers.
 
     :param request: The web request.
     """
-    QCoreApplication.setOrganizationName('QGIS')
-    QCoreApplication.setOrganizationDomain('qgis.org')
-    QCoreApplication.setApplicationName('QGIS2InaSAFETesting')
-
-    #noinspection PyPep8Naming
-    gui_flag = False
-    qgis_app = QgsApplication(sys.argv, gui_flag)
-
-    # Make sure QGIS_PREFIX_PATH is set in your env if needed!
-    qgis_app.initQgis()
-
     r = QgsProviderRegistry.instance()
     providers = r.providerList()
 
@@ -66,17 +56,6 @@ def preview(request, layer_slug):
     :param layer_slug: The layer
     """
     layer = get_object_or_404(Layer, slug=layer_slug)
-    QCoreApplication.setOrganizationName('QGIS')
-    QCoreApplication.setOrganizationDomain('qgis.org')
-    QCoreApplication.setApplicationName('QGIS2InaSAFETesting')
-
-    #noinspection PyPep8Naming
-    gui_flag = True
-    # app = QApplication([], gui_flag)
-    qgis_app = QgsApplication(sys.argv, gui_flag)
-
-    # Make sure QGIS_PREFIX_PATH is set in your env if needed!
-    qgis_app.initQgis()
 
     layer_path = os.path.join(
         settings.MEDIA_ROOT, 'layers', layer.slug, 'raw')
@@ -85,44 +64,37 @@ def preview(request, layer_slug):
     layer_uri = '/tmp/canvas.png'
 
     # create image
-    img = QImage(QSize(800,600), QImage.Format_ARGB32_Premultiplied)
+    image = QImage(QSize(800, 600), QImage.Format_ARGB32_Premultiplied)
 
     # set image's background color
-    color = QColor(255,255,255)
-    img.fill(color.rgb())
+    color = QColor(255, 255, 255)
+    image.fill(color.rgb())
 
     # create painter
     p = QPainter()
-    p.begin(img)
+    p.begin(image)
     p.setRenderHint(QPainter.Antialiasing)
 
-    render = QgsMapRenderer()
+    renderer = QgsMapRenderer()
 
     # set layer set
-    lst = [ map_layer.id() ]  # add ID of every layer
-    render.setLayerSet(lst)
+    layers = [map_layer.id()]  # add ID of every layer
+    renderer.setLayerSet(layers)
 
     # set extent
-    rect = QgsRectangle(render.fullExtent())
+    rect = QgsRectangle(renderer.fullExtent())
     rect.scale(1.1)
-    render.setExtent(rect)
+    renderer.setExtent(rect)
 
     # set output size
-    render.setOutputSize(img.size(), img.logicalDpiX())
+    renderer.setOutputSize(image.size(), image.logicalDpiX())
 
     # do the rendering
-    render.render(p)
+    renderer.render(p)
 
     p.end()
-
     # save image
-    img.save(layer_uri,"png")
-
-
-
-
-
-
+    image.save(layer_uri, 'png')
     with open(layer_uri, 'rb') as f:
         response = HttpResponse(f.read(), content_type='png')
 

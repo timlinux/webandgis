@@ -164,3 +164,32 @@ LOGGING = {
 # Constants used for site authentication
 LOGIN_URL = '/users/signin/'
 LOGIN_REDIRECT_URL = '/'
+
+import sys
+import qgis
+from PyQt4.QtCore import QCoreApplication
+from qgis.core import QgsApplication
+
+
+def init_qgis():
+    """Set up a global QGIS instance.
+
+    :returns: A QGIS application (for global use).
+    :rtype: QgsApplication
+    """
+    print 'Instantiating QGIS'
+    QCoreApplication.setOrganizationName('InaSAFE')
+    QCoreApplication.setOrganizationDomain('inasafe.org')
+    QCoreApplication.setApplicationName('InaSAFEWeb')
+
+    #noinspection PyPep8Naming
+    gui_flag = True
+    # app = QApplication([], gui_flag)
+    app = QgsApplication(sys.argv, gui_flag)
+
+    # Make sure QGIS_PREFIX_PATH is set in your env if needed!
+    app.initQgis()
+    return app
+
+
+QGIS_APP = init_qgis()
