@@ -1,3 +1,5 @@
+# coding=utf-8
+"""Views for layers"""
 import tempfile
 import glob
 import os
@@ -10,14 +12,19 @@ from safe.api import read_layer
 from safe.api import calculate_impact
 from safe.impact_functions.inundation.flood_OSM_building_impact import \
     FloodBuildingImpactFunction
-from safe.impact_functions.inundation.flood_polygon_roads import FloodVectorRoadsExperimentalFunction
+# noinspection PyUnresolvedReferences
+import safe.impact_functions.inundation.flood_polygon_roads
 from subprocess import call
 from django.contrib.auth.decorators import login_required
+# noinspection PyUnresolvedReferences
 from safe_qgis.utilities.qgis_layer_wrapper import QgisWrapper
+# noinspection PyUnresolvedReferences
 from safe_qgis.safe_interface import calculate_safe_impact
 
+# noinspection PyUnresolvedReferences
 from PyQt4.QtCore import QCoreApplication, QSize
 from PyQt4.QtGui import QImage, QPainter, QColor
+# noinspection PyUnresolvedReferences
 from qgis.core import (
     QgsProviderRegistry,
     QgsVectorLayer,
@@ -26,12 +33,18 @@ from qgis.core import (
     QgsMapRenderer,
     QgsMapLayerRegistry,
     QgsRectangle
-    )
+)
 
 QGIS_APP = None
 
 
 def qgis_layers():
+    """
+    Helper to get loaded layers list in QGIS.
+
+    :return: A list of layers.
+    :rtype: str
+    """
     r = QgsMapLayerRegistry.instance()
     registry_layers = r.mapLayers()
     registry_list = []
@@ -125,19 +138,26 @@ def preview(request, layer_slug):
 
 
 def detail(request, layer_slug):
-    """Ariel must document his code!"""
+    """Ariel must document his code!
+    :param layer_slug:
+    :param request:
+    """
     layer = get_object_or_404(Layer, slug=layer_slug)
 
     #get GeoJSON file
     layer_folder = os.path.join(settings.MEDIA_URL, 'layers', layer_slug)
     geometry_json = os.path.join(layer_folder, 'raw', 'geometry.json')
-    context = {'layer': layer}
-    context['geojson'] = geometry_json
+    context = {'layer': layer, 'geojson': geometry_json}
 
     return render(request, 'layers/detail.html', context)
 
 
 def get_layer_data(layer_name):
+    """
+
+    :param layer_name:
+    :return:
+    """
     layer = Layer.objects.get(name=layer_name)
     layer_path = os.path.join(settings.MEDIA_ROOT, 'layers', layer.slug, 'raw')
     os.chdir(layer_path)
@@ -145,9 +165,11 @@ def get_layer_data(layer_name):
     layer_file = os.path.join(layer_path, filename)
     return read_layer(layer_file)
 
+
 @login_required(redirect_field_name='next')
 def calculate(request):
     """Calculates the buildings affected by flood.
+    :param request:
     """
 
     output = os.path.join(settings.MEDIA_ROOT, 'layers', 'impact.json')
