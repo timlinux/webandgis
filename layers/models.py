@@ -25,10 +25,12 @@ class Layer(models.Model):
     description = models.TextField(null=True, blank=True)
     slug = models.SlugField(editable=False)
     bbox = models.CharField(max_length=255, null=True, blank=True)
-    original = models.FileField(storage=OverwriteStorage(),
-                                upload_to='uploads', null=True, blank=True,
-                                help_text="""Zip file with either geotiff and
-                                projection or shapefiles and friends""")
+    file_name = models.CharField(max_length=255, null=False, blank=True)
+    original = models.FileField(
+        storage=OverwriteStorage(),
+        upload_to='uploads', null=True, blank=True,
+        help_text="""Zip file with either geotiff and
+        projection or shapefiles and friends""")
     style = models.TextField(null=True, blank=True)
     # type = models.CharField(max_length=255)
 
@@ -70,6 +72,13 @@ def layer_handler(sender, instance, *args, **kwargs):
     # Iterate over the files in the zip and create them in the raw folder.
     the_zip = zipfile.ZipFile(instance.original)
     for name in the_zip.namelist():
+        # Need to put this in the save event rather
+        ext = os.path.splitext(name)[1]
+        if ext == '.shp':
+            sender.file_name = name
+        elif ext == '.tif':
+            sender.file_name = name
+        # end of part to move to save
         outfile = open(os.path.join(zip_out, name), 'wb')
         outfile.write(the_zip.read(name))
         outfile.close()

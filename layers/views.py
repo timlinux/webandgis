@@ -78,6 +78,51 @@ def index(request):
     return render(request, 'layers/index.html', context)
 
 
+def render_layers(layer_paths):
+    """
+
+    :param layer_paths: A list of layer paths.
+    :return: Filename of rendered map
+    """
+    layer_uri = tempfile.NamedTemporaryFile(
+        suffix='.png', prefix='inasafe-web-', dir='/tmp/').name
+    # create image
+    dim = 1000
+    image = QImage(QSize(dim, dim), QImage.Format_ARGB32_Premultiplied)
+    # set image's background color
+    color = QColor(255, 255, 255, 0)
+    image.fill(color.rgb())
+    # create painter
+    p = QPainter()
+    p.begin(image)
+    p.setRenderHint(QPainter.Antialiasing)
+    renderer = QgsMapRenderer()
+    layers = []
+
+    for layer_path in layer_paths:
+        map_layer = QgsVectorLayer(layer_path, None, 'ogr')
+        QgsMapLayerRegistry.instance().addMapLayer(map_layer)
+
+        # set layer set
+        layers = [map_layer.id()]  # add ID of every layer
+
+    renderer.setLayerSet(layers)
+    # set extent
+    rect = QgsRectangle(renderer.fullExtent())
+    rect.scale(1.1)
+    renderer.setExtent(rect)
+    # set output size
+    renderer.setOutputSize(image.size(), image.logicalDpiX())
+    # do the rendering
+    renderer.render(p)
+    p.end()
+    # clean up
+    QgsMapLayerRegistry.instance().removeAllMapLayers()
+    # save image
+    image.save(layer_uri, 'png')
+    return layer_uri
+
+
 def preview(request, layer_slug):
     """Home page for layers.
 
@@ -86,53 +131,11 @@ def preview(request, layer_slug):
     """
     layer = get_object_or_404(Layer, slug=layer_slug)
 
-    layer_path = os.path.join(
-        settings.MEDIA_ROOT, 'layers', layer.slug, 'raw')
-    map_layer = QgsVectorLayer(layer_path, layer.name, 'ogr')
-    QgsMapLayerRegistry.instance().addMapLayer(map_layer)
-    layer_uri = tempfile.NamedTemporaryFile(
-        suffix='.png', prefix='inasafe-web-', dir='/tmp/').name
-    # create image
-    image = QImage(QSize(100, 100), QImage.Format_ARGB32_Premultiplied)
-
-    # set image's background color
-    color = QColor(255, 255, 255)
-    image.fill(color.rgb())
-
-    # create painter
-    p = QPainter()
-    p.begin(image)
-    p.setRenderHint(QPainter.Antialiasing)
-
-    renderer = QgsMapRenderer()
-
-    # set layer set
-    layers = [map_layer.id()]  # add ID of every layer
-    renderer.setLayerSet(layers)
-
-    # set extent
-    rect = QgsRectangle(renderer.fullExtent())
-    rect.scale(1.1)
-    renderer.setExtent(rect)
-
-    # set output size
-    renderer.setOutputSize(image.size(), image.logicalDpiX())
-
-    # do the rendering
-    renderer.render(p)
-
-    p.end()
-
-    # clean up
-    registry_list = qgis_layers()
-    QgsMapLayerRegistry.instance().removeMapLayer(map_layer.id())
-    print registry_list
-
-    # save image
-    image.save(layer_uri, 'png')
+    layer_path = shapefile_path(layer.name)
+    layer_uri = render_layers([layer_path])
     with open(layer_uri, 'rb') as f:
         response = HttpResponse(f.read(), content_type='png')
-    os.remove(layer_uri)
+    # os.remove(layer_uri)
 
     return response
 
@@ -152,17 +155,22 @@ def detail(request, layer_slug):
     return render(request, 'layers/detail.html', context)
 
 
+def shapefile_path(layer_name):
+    layer = Layer.objects.get(name=layer_name)
+    layer_path = os.path.join(settings.MEDIA_ROOT, 'layers', layer.slug, 'raw')
+    os.chdir(layer_path)
+    filename = glob.glob('*.shp')[0]
+    layer_file = os.path.join(layer_path, filename)
+    return layer_file
+
+
 def get_layer_data(layer_name):
     """
 
     :param layer_name:
     :return:
     """
-    layer = Layer.objects.get(name=layer_name)
-    layer_path = os.path.join(settings.MEDIA_ROOT, 'layers', layer.slug, 'raw')
-    os.chdir(layer_path)
-    filename = glob.glob('*.shp')[0]
-    layer_file = os.path.join(layer_path, filename)
+    layer_file = shapefile_path(layer_name)
     return read_layer(layer_file)
 
 
@@ -189,6 +197,10 @@ def calculate(request):
         layers=[buildings, flood],
         impact_fcn=impact_function
     )
+
+    flood_path = shapefile_path('Flood')
+    impact_path = impact_file.filename
+    render_layers([flood_path, impact_path])
 
     call(['ogr2ogr', '-f', 'GeoJSON',
           output, impact_file.filename])
