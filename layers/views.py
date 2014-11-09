@@ -1,6 +1,5 @@
 # coding=utf-8
 """Views for layers"""
-import tempfile
 import glob
 import os
 
@@ -22,8 +21,8 @@ from safe_qgis.utilities.qgis_layer_wrapper import QgisWrapper
 from safe_qgis.safe_interface import calculate_safe_impact
 
 # noinspection PyUnresolvedReferences
-from PyQt4.QtCore import QCoreApplication, QSize
-from PyQt4.QtGui import QImage, QPainter, QColor
+from PyQt4.QtCore import QCoreApplication, QSize, QBuffer, QIODevice
+
 # noinspection PyUnresolvedReferences
 from qgis.core import (
     QgsProviderRegistry,
@@ -32,7 +31,11 @@ from qgis.core import (
     QgsRectangle,
     QgsMapRenderer,
     QgsMapLayerRegistry,
-    QgsRectangle
+    QgsRectangle,
+    QgsMapSettings,
+    QgsMapRendererSequentialJob,
+    QgsCoordinateReferenceSystem,
+    QgsCoordinateTransform
 )
 
 QGIS_APP = None
@@ -82,45 +85,55 @@ def render_layers(layer_paths):
     """
 
     :param layer_paths: A list of layer paths.
-    :return: Filename of rendered map
+    :return: Buffer containing output. Note caller is responsible for closing
+        the buffer with buffer.close()
+    :rtype: QBuffer
     """
-    layer_uri = tempfile.NamedTemporaryFile(
-        suffix='.png', prefix='inasafe-web-', dir='/tmp/').name
-    # create image
-    dim = 1000
-    image = QImage(QSize(dim, dim), QImage.Format_ARGB32_Premultiplied)
-    # set image's background color
-    color = QColor(255, 255, 255, 0)
-    image.fill(color.rgb())
-    # create painter
-    p = QPainter()
-    p.begin(image)
-    p.setRenderHint(QPainter.Antialiasing)
-    renderer = QgsMapRenderer()
     layers = []
+    extent = None
+
+
+    crs = QgsCoordinateReferenceSystem()
+    crs.createFromSrid(3857)
 
     for layer_path in layer_paths:
         map_layer = QgsVectorLayer(layer_path, None, 'ogr')
         QgsMapLayerRegistry.instance().addMapLayer(map_layer)
-
+        transform = QgsCoordinateTransform(map_layer.crs(), crs)
+        print map_layer.extent().toString()
+        layer_extent = transform.transform(map_layer.extent())
+        if extent is None:
+            extent = layer_extent
+        else:
+            extent.combineExtentWith(layer_extent)
+        print extent.toString()
         # set layer set
-        layers = [map_layer.id()]  # add ID of every layer
+        layers.append(map_layer.id())  # add ID of every layer
 
-    renderer.setLayerSet(layers)
-    # set extent
-    rect = QgsRectangle(renderer.fullExtent())
-    rect.scale(1.1)
-    renderer.setExtent(rect)
-    # set output size
-    renderer.setOutputSize(image.size(), image.logicalDpiX())
-    # do the rendering
-    renderer.render(p)
-    p.end()
+    map_settings = QgsMapSettings()
+
+    map_settings.setDestinationCrs(crs)
+    map_settings.setCrsTransformEnabled(True)
+    map_settings.setExtent(extent)
+    map_settings.setOutputSize(QSize(1000, 1000))
+
+    map_settings.setLayers(layers)
+
+    # job = QgsMapRendererParallelJob(settings)
+    job = QgsMapRendererSequentialJob(map_settings)
+    job.start()
+    job.waitForFinished()
+    image = job.renderedImage()
+    # Save teh image to a buffer
+    map_buffer = QBuffer()
+    map_buffer.open(QIODevice.ReadWrite)
+    image.save(map_buffer, "PNG")
+    image.save('/tmp/test.png', 'png')
+
     # clean up
     QgsMapLayerRegistry.instance().removeAllMapLayers()
-    # save image
-    image.save(layer_uri, 'png')
-    return layer_uri
+
+    return map_buffer
 
 
 def preview(request, layer_slug):
@@ -132,10 +145,8 @@ def preview(request, layer_slug):
     layer = get_object_or_404(Layer, slug=layer_slug)
 
     layer_path = shapefile_path(layer.name)
-    layer_uri = render_layers([layer_path])
-    with open(layer_uri, 'rb') as f:
-        response = HttpResponse(f.read(), content_type='png')
-    # os.remove(layer_uri)
+    map_buffer = render_layers([layer_path])
+    response = HttpResponse(map_buffer.data(), content_type='png')
 
     return response
 
